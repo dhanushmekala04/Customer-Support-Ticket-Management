@@ -25,7 +25,7 @@ setup:
 	@if [ ! -f .env ]; then \
 		echo "Creating .env file from .env.example..."; \
 		cp .env.example .env; \
-		echo "✅ Created .env file. Please edit it and add your OPENAI_API_KEY"; \
+		echo "✅ Created .env file. Please edit it and add your GROQ_API_KEY"; \
 	else \
 		echo "⚠️  .env file already exists"; \
 	fi

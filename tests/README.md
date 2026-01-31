@@ -122,7 +122,7 @@ The `conftest.py` file provides reusable fixtures:
 ### Mock Fixtures
 
 - `mock_llm_response` - Creates mock LLM responses
-- `mock_chatgpt` - Mocks ChatOpenAI to avoid API calls
+- `mock_chatgpt` - Mocks ChatGroq to avoid API calls
 
 ## Test Independence
 
@@ -141,7 +141,7 @@ The test suite uses comprehensive mocking to avoid external dependencies:
 ### 1. LLM Mocking
 
 ```python
-# All OpenAI API calls are mocked
+# All Groq API calls are mocked
 mock_chatgpt("TECHNICAL")  # Returns this as LLM response
 ```
 
@@ -303,7 +303,7 @@ pytest tests/
 **Mock not working:**
 ```python
 # Ensure mock path matches import path in agent file
-monkeypatch.setattr("src.agents.intake_agent.ChatOpenAI", mock_llm_class)
+monkeypatch.setattr("src.agents.intake_agent.ChatGroq", mock_llm_class)
 ```
 
 **Fixture not found:**

@@ -90,7 +90,7 @@ customer-support-ticket-mgmt-multi-agent-system/
 ### Prerequisites
 
 - Python 3.8 or higher
-- OpenAI API key
+- Groq API key
 - Virtual environment (recommended)
 
 ### Installation
@@ -121,9 +121,9 @@ customer-support-ticket-mgmt-multi-agent-system/
    cp .env.example .env
    ```
 
-   Edit `.env` and add your OpenAI API key:
+   Edit `.env` and add your Groq API key:
    ```env
-   OPENAI_API_KEY=sk-your-api-key-here
+   GROQ_API_KEY=sk-your-api-key-here
    ```
 
 5. **Verify installation**
@@ -273,9 +273,9 @@ Check API health status.
 All configuration is managed through environment variables in `.env`:
 
 ```env
-# OpenAI Configuration
-OPENAI_API_KEY=your-api-key-here
-OPENAI_MODEL=gpt-4                    # or gpt-3.5-turbo
+# Groq Configuration
+GROQ_API_KEY=your-api-key-here
+GROQ_MODEL=llama-3.1-70b-versatile    # or mixtral-8x7b-32768
 TEMPERATURE=0.7
 
 # Application Settings
@@ -448,10 +448,10 @@ cd customer-support-ticket-mgmt-multi-agent-system
 python -m src.api.main
 ```
 
-**2. OpenAI API Error**
+**2. Groq API Error**
 ```bash
 # Check your API key in .env
-# Verify you have credits in your OpenAI account
+# Verify you have credits in your Groq account
 ```
 
 **3. Port Already in Use**
@@ -537,4 +537,4 @@ For issues, questions, or contributions:
 
 ---
 
-**Built with LangGraph** | **Powered by OpenAI** | **Production Ready**
+**Built with LangGraph** | **Powered by Groq** | **Production Ready**
