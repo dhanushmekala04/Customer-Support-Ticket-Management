@@ -1,98 +1,229 @@
 """
-FAQ Lookup Agent - Searches knowledge base for quick resolutions.
+FAQ Lookup Agent - Searches MongoDB for matching FAQs
+before routing to specialized support agents.
+
+Also doubles as a CLI to manage the FAQ database
+(replaces scripts/add_faq.py):
+
+    python -m src.agents.faq_agent              # interactive add
+    python -m src.agents.faq_agent list         # list all FAQs
+    python -m src.agents.faq_agent add          # interactive add
+    python -m src.agents.faq_agent add <CATEGORY> <question> <answer>
 """
 
-import json
 import logging
-import os
-from typing import Dict, Any
+import sys
+from difflib import SequenceMatcher
+from pymongo import MongoClient
 
-from langchain_groq import ChatGroq
-from langchain_core.prompts import ChatPromptTemplate
-
-from src.models.state import TicketState
 from src.config import config
+from src.models.state import TicketState
 
 logger = logging.getLogger(__name__)
 
 
-def load_faq_database() -> Dict[str, Any]:
-    """Load FAQ database from file."""
-    try:
-        if os.path.exists(config.FAQ_DATABASE_PATH):
-            with open(config.FAQ_DATABASE_PATH, 'r') as f:
-                return json.load(f)
-        else:
-            logger.warning("FAQ database not found, using empty database")
-            return {"faqs": []}
-    except Exception as e:
-        logger.error(f"Error loading FAQ database: {e}")
-        return {"faqs": []}
+# =====================================================
+# DB HELPER
+# =====================================================
+
+# Single client reused across all calls
+_client = MongoClient(config.MONGO_URI)
+
+
+def _get_faq_collection():
+    """Return the MongoDB FAQ collection."""
+    return _client[config.MONGO_DB_NAME][config.FAQ_COLLECTION]
+
+
+# =====================================================
+# AGENT
+# =====================================================
+
+def _similarity(a: str, b: str) -> float:
+    """Return a 0-1 similarity score between two strings."""
+    return SequenceMatcher(
+        None,
+        a.lower().strip(),
+        b.lower().strip()
+    ).ratio()
 
 
 def faq_lookup_agent(state: TicketState) -> TicketState:
     """
-    Search FAQ database for matching solutions.
+    Search MongoDB FAQs for a match to the customer query.
 
-    Args:
-        state: Current ticket state
-
-    Returns:
-        Updated state with FAQ match if found
+    Sets state['faq_match'] if a match above the similarity
+    threshold is found; leaves it empty so the workflow
+    routes to the classifier otherwise.
     """
-    logger.info(f"Searching FAQ for ticket: {state['ticket_id']}")
+    query = state.get("customer_query", "").strip()
+    ticket_id = state.get("ticket_id", "unknown")
 
-    # Load FAQ database
-    faq_db = load_faq_database()
+    logger.info(f"[{ticket_id}] FAQ lookup for: {query!r}")
 
-    # Initialize LLM for semantic search
-    llm = ChatGroq(
-        model=config.GROQ_MODEL,
-        temperature=0.3,  # Lower temperature for more deterministic matching
-        api_key=config.GROQ_API_KEY
-    )
+    state["faq_match"] = ""  # default: no match
 
-    # Create FAQ search prompt
-    faq_list = "\n".join([
-        f"Q: {faq['question']}\nA: {faq['answer']}"
-        for faq in faq_db.get("faqs", [])
-    ])
-
-    if not faq_list:
-        state["faq_match"] = "No FAQ entries available"
-        state["conversation_history"].append("[FAQ] No FAQ database found")
+    if not query:
+        logger.warning(f"[{ticket_id}] Empty query — skipping FAQ lookup")
         return state
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", """You are a FAQ matching specialist.
-        Given a customer query and a list of FAQ entries, determine if any FAQ directly addresses the customer's question.
-        If you find a match, return ONLY the answer from the FAQ.
-        If no good match exists, respond with 'NO_MATCH'.
-        Be strict - only return a match if it directly addresses the query."""),
-        ("user", """Customer Query: {query}
+    try:
+        collection = _get_faq_collection()
+        faqs = list(collection.find({}, {"_id": 0}))
+    except Exception as e:
+        logger.error(f"[{ticket_id}] MongoDB error during FAQ lookup: {e}")
+        return state
 
-Available FAQs:
-{faq_list}
+    if not faqs:
+        logger.info(f"[{ticket_id}] FAQ collection is empty")
+        return state
 
-Your response:""")
-    ])
+    best_score = 0.0
+    best_faq = None
 
-    # Search for matching FAQ
-    chain = prompt | llm
-    response = chain.invoke({
-        "query": state["customer_query"],
-        "faq_list": faq_list
-    })
+    for faq in faqs:
+        score = _similarity(query, faq.get("question", ""))
+        if score > best_score:
+            best_score = score
+            best_faq = faq
 
-    faq_match = response.content.strip()
+    threshold = config.FAQ_SIMILARITY_THRESHOLD
 
-    if faq_match != "NO_MATCH":
-        state["faq_match"] = faq_match
-        state["conversation_history"].append(f"[FAQ] Match found: {faq_match[:100]}...")
-        logger.info("FAQ match found")
+    if best_faq and best_score >= threshold:
+        logger.info(
+            f"[{ticket_id}] FAQ match found "
+            f"(id={best_faq['id']}, score={best_score:.2f}): "
+            f"{best_faq['question']!r}"
+        )
+        state["faq_match"] = best_faq["answer"]
+        state["category"] = best_faq.get("category", "GENERAL")
     else:
-        state["faq_match"] = ""
-        state["conversation_history"].append("[FAQ] No direct match found")
-        logger.info("No FAQ match found")
+        logger.info(
+            f"[{ticket_id}] No FAQ match "
+            f"(best score={best_score:.2f}, threshold={threshold})"
+        )
 
     return state
+
+
+# =====================================================
+# FAQ MANAGEMENT (CLI)
+# =====================================================
+
+def add_faq_entry(category: str, question: str, answer: str) -> bool:
+    """Insert a new FAQ document into MongoDB."""
+    try:
+        collection = _get_faq_collection()
+        last = collection.find_one(sort=[("id", -1)])
+        new_id = (last["id"] + 1) if last else 1
+
+        collection.insert_one({
+            "id": new_id,
+            "category": category.upper(),
+            "question": question,
+            "answer": answer
+        })
+
+        print(f"\n✅ Successfully added FAQ #{new_id}")
+        print(f"   Category : {category.upper()}")
+        print(f"   Question : {question}")
+        print(f"   Answer   : {answer}\n")
+        return True
+
+    except Exception as e:
+        print(f"❌ Failed to add FAQ: {e}")
+        return False
+
+
+def list_faqs() -> None:
+    """Print all FAQs from MongoDB."""
+    try:
+        collection = _get_faq_collection()
+        faqs = list(collection.find({}, {"_id": 0}).sort("id", 1))
+    except Exception as e:
+        print(f"❌ MongoDB error: {e}")
+        return
+
+    print("\n" + "=" * 80)
+    print(f"FAQ DATABASE — {len(faqs)} entries")
+    print("=" * 80 + "\n")
+
+    for faq in faqs:
+        preview = (
+            faq["answer"][:100] + "..."
+            if len(faq["answer"]) > 100
+            else faq["answer"]
+        )
+        print(f"[{faq['id']}] {faq['category']}")
+        print(f"  Q: {faq['question']}")
+        print(f"  A: {preview}")
+        print()
+
+
+def interactive_add() -> bool:
+    """Prompt the user to fill in a new FAQ entry."""
+    print("\n" + "=" * 80)
+    print("ADD FAQ ENTRY — INTERACTIVE MODE")
+    print("=" * 80 + "\n")
+
+    category_map = {"1": "TECHNICAL", "2": "BILLING", "3": "GENERAL"}
+
+    print("Select category:")
+    for k, v in category_map.items():
+        print(f"  {k}. {v}")
+
+    while True:
+        choice = input("\nEnter choice (1-3): ").strip()
+        if choice in category_map:
+            category = category_map[choice]
+            break
+        print("  Invalid — please enter 1, 2, or 3.")
+
+    question = input(f"\n[{category}] Question: ").strip()
+    answer   = input(f"[{category}] Answer  : ").strip()
+
+    print("\n" + "-" * 80)
+    print("Preview:")
+    print("-" * 80)
+    print(f"  Category : {category}")
+    print(f"  Question : {question}")
+    print(f"  Answer   : {answer}")
+    print("-" * 80)
+
+    if input("\nAdd this FAQ entry? (y/n): ").strip().lower() == "y":
+        return add_faq_entry(category, question, answer)
+
+    print("❌ Cancelled")
+    return False
+
+
+# =====================================================
+# CLI ENTRY POINT
+# =====================================================
+
+def _cli() -> None:
+    args = sys.argv[1:]
+
+    if not args:
+        interactive_add()
+
+    elif args[0] == "list":
+        list_faqs()
+
+    elif args[0] == "add":
+        if len(args) == 4:
+            _, category, question, answer = args
+            add_faq_entry(category, question, answer)
+        else:
+            interactive_add()
+
+    else:
+        print("Usage:")
+        print("  python -m src.agents.faq_agent                           # interactive add")
+        print("  python -m src.agents.faq_agent list                      # list all FAQs")
+        print("  python -m src.agents.faq_agent add                       # interactive add")
+        print("  python -m src.agents.faq_agent add <CATEGORY> <question> <answer>")
+
+
+if __name__ == "__main__":
+    _cli()

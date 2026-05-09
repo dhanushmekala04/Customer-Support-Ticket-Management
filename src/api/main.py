@@ -1,5 +1,6 @@
 """
 FastAPI REST API for the Customer Support Ticket Management System.
+Every processed ticket is stored in MongoDB for full traceability.
 """
 
 import logging
@@ -7,6 +8,7 @@ import uuid
 from datetime import datetime
 from typing import Optional, List
 
+from pymongo import MongoClient
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ConfigDict
@@ -16,33 +18,74 @@ from src.config import config
 from src.utils.logger import setup_logging
 from src.utils.metrics import TicketMetrics
 
-# Setup logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
 api_app = FastAPI(
     title="Customer Support Ticket Management System",
     description="Multi-Agent AI System for automating customer support ticket processing",
     version="1.0.0"
 )
 
-# Add CORS middleware
 api_app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Initialize metrics tracker
 metrics = TicketMetrics()
 
+# =====================================================
+# MONGODB
+# =====================================================
 
-# Request/Response Models
+try:
+    _mongo_client = MongoClient(config.MONGO_URI)
+    _mongo_client.admin.command("ping")
+    logger.info("MongoDB connected successfully")
+except Exception as e:
+    logger.error(f"MongoDB connection failed: {e}")
+    _mongo_client = None
+
+
+def get_tickets_collection():
+    """Return the tickets collection."""
+    return _mongo_client[config.MONGO_DB_NAME][config.TICKETS_COLLECTION]
+
+
+def save_ticket(result: dict, processing_time: float) -> None:
+    """Persist the full ticket state to MongoDB."""
+    try:
+        collection = get_tickets_collection()
+        doc = {
+            "ticket_id":            result["ticket_id"],
+            "customer_query":       result["customer_query"],
+            "customer_email":       result.get("customer_email"),
+            "category":             result["category"],
+            "priority":             result["priority"],
+            "faq_match":            result.get("faq_match", ""),
+            "resolution":           result.get("resolution", ""),
+            "needs_escalation":     result["needs_escalation"],
+            "final_response":       result["final_response"],
+            "conversation_history": result.get("conversation_history", []),
+            "metadata":             result.get("metadata", {}),
+            "processing_time_sec":  round(processing_time, 3),
+            "created_at":           result.get("timestamp", datetime.now().isoformat()),
+            "saved_at":             datetime.now().isoformat(),
+        }
+        collection.insert_one(doc)
+        logger.info(f"Ticket {result['ticket_id']} saved to MongoDB")
+    except Exception as e:
+        logger.error(f"Failed to save ticket {result.get('ticket_id')}: {e}")
+
+
+# =====================================================
+# REQUEST / RESPONSE MODELS
+# =====================================================
+
 class TicketRequest(BaseModel):
-    """Request model for ticket submission."""
     customer_query: str = Field(..., description="Customer's support query")
     customer_email: Optional[str] = Field(None, description="Customer email address")
     ticket_id: Optional[str] = Field(None, description="Optional custom ticket ID")
@@ -58,7 +101,6 @@ class TicketRequest(BaseModel):
 
 
 class TicketResponse(BaseModel):
-    """Response model for processed ticket."""
     ticket_id: str
     category: str
     final_response: str
@@ -69,14 +111,12 @@ class TicketResponse(BaseModel):
 
 
 class HealthResponse(BaseModel):
-    """Health check response."""
     status: str
     version: str
     timestamp: str
 
 
 class MetricsResponse(BaseModel):
-    """Metrics response."""
     total_tickets: int
     escalated_tickets: int
     automation_rate: float
@@ -84,25 +124,27 @@ class MetricsResponse(BaseModel):
     category_distribution: dict
 
 
-# API Endpoints
+# =====================================================
+# ENDPOINTS
+# =====================================================
 
 @api_app.get("/", response_model=dict)
 async def root():
-    """Root endpoint with API information."""
     return {
         "message": "Customer Support Ticket Management System API",
         "version": "1.0.0",
         "endpoints": {
             "process_ticket": "/api/v1/tickets/process",
-            "health": "/health",
-            "metrics": "/api/v1/metrics"
+            "get_ticket":     "/api/v1/tickets/{ticket_id}",
+            "list_tickets":   "/api/v1/tickets",
+            "health":         "/health",
+            "metrics":        "/api/v1/metrics",
         }
     }
 
 
 @api_app.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint."""
     return HealthResponse(
         status="healthy",
         version="1.0.0",
@@ -113,46 +155,36 @@ async def health_check():
 @api_app.post("/api/v1/tickets/process", response_model=TicketResponse)
 async def process_ticket(request: TicketRequest):
     """
-    Process a customer support ticket through the multi-agent system.
-
-    Args:
-        request: Ticket request containing customer query
-
-    Returns:
-        Processed ticket with resolution or escalation status
+    Process a support ticket through the multi-agent workflow
+    and persist the full conversation to MongoDB.
     """
     try:
-        # Generate ticket ID if not provided
         ticket_id = request.ticket_id or f"{config.TICKET_ID_PREFIX}-{uuid.uuid4().hex[:8].upper()}"
-
         logger.info(f"Processing new ticket: {ticket_id}")
 
-        # Create initial state
         initial_state = {
-            "customer_query": request.customer_query,
-            "ticket_id": ticket_id,
-            "category": "",
-            "faq_match": "",
-            "resolution": "",
-            "needs_escalation": False,
-            "final_response": "",
+            "customer_query":       request.customer_query,
+            "ticket_id":            ticket_id,
+            "category":             "",
+            "faq_match":            "",
+            "resolution":           "",
+            "needs_escalation":     False,
+            "final_response":       "",
             "conversation_history": [],
-            "customer_email": request.customer_email,
-            "priority": "medium",
-            "timestamp": datetime.now().isoformat(),
-            "metadata": {}
+            "customer_email":       request.customer_email,
+            "priority":             "medium",
+            "timestamp":            datetime.now().isoformat(),
+            "metadata":             {}
         }
 
-        # Start metrics tracking
         start_time = datetime.now()
-
-        # Process ticket through workflow
         result = workflow_app.invoke(initial_state)
-
-        # Calculate processing time
         processing_time = (datetime.now() - start_time).total_seconds()
 
-        # Update metrics
+        # ── Save to MongoDB ──
+        save_ticket(result, processing_time)
+
+        # ── Update in-memory metrics ──
         metrics.record_ticket(
             category=result["category"],
             escalated=result["needs_escalation"],
@@ -160,13 +192,12 @@ async def process_ticket(request: TicketRequest):
         )
 
         logger.info(
-            f"Ticket {ticket_id} processed - "
-            f"Category: {result['category']}, "
-            f"Escalated: {result['needs_escalation']}, "
-            f"Time: {processing_time:.2f}s"
+            f"Ticket {ticket_id} processed — "
+            f"category={result['category']}, "
+            f"escalated={result['needs_escalation']}, "
+            f"time={processing_time:.2f}s"
         )
 
-        # Return response
         return TicketResponse(
             ticket_id=result["ticket_id"],
             category=result["category"],
@@ -178,62 +209,84 @@ async def process_ticket(request: TicketRequest):
         )
 
     except Exception as e:
-        logger.error(f"Error processing ticket: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error processing ticket: {str(e)}"
+        logger.error(f"Error processing ticket: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error processing ticket: {e}")
+
+
+@api_app.get("/api/v1/tickets/{ticket_id}")
+async def get_ticket(ticket_id: str):
+    """Retrieve a single ticket by ID from MongoDB."""
+    try:
+        collection = get_tickets_collection()
+        doc = collection.find_one({"ticket_id": ticket_id}, {"_id": 0})
+        if not doc:
+            raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found")
+        return doc
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_app.get("/api/v1/tickets")
+async def list_tickets(
+    limit: int = 20,
+    category: Optional[str] = None,
+    escalated: Optional[bool] = None,
+):
+    """
+    List recent tickets from MongoDB.
+    Optional filters: category (TECHNICAL/BILLING/GENERAL), escalated (true/false).
+    """
+    try:
+        collection = get_tickets_collection()
+        query = {}
+        if category:
+            query["category"] = category.upper()
+        if escalated is not None:
+            query["needs_escalation"] = escalated
+
+        docs = list(
+            collection.find(query, {"_id": 0})
+            .sort("saved_at", -1)
+            .limit(limit)
         )
+        return {"total": len(docs), "tickets": docs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @api_app.get("/api/v1/metrics", response_model=MetricsResponse)
 async def get_metrics():
-    """
-    Get system performance metrics.
-
-    Returns:
-        Current system metrics including automation rate and performance stats
-    """
     try:
-        metrics_data = metrics.get_metrics()
-
+        data = metrics.get_metrics()
         return MetricsResponse(
-            total_tickets=metrics_data["total_tickets"],
-            escalated_tickets=metrics_data["escalated_tickets"],
-            automation_rate=metrics_data["automation_rate"],
-            average_response_time=metrics_data["average_response_time"],
-            category_distribution=metrics_data["category_distribution"]
+            total_tickets=data["total_tickets"],
+            escalated_tickets=data["escalated_tickets"],
+            automation_rate=data["automation_rate"],
+            average_response_time=data["average_response_time"],
+            category_distribution=data["category_distribution"]
         )
-
     except Exception as e:
-        logger.error(f"Error retrieving metrics: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error retrieving metrics: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @api_app.post("/api/v1/metrics/reset")
 async def reset_metrics():
-    """Reset all metrics (useful for testing)."""
     try:
         metrics.reset()
-        logger.info("Metrics reset")
         return {"message": "Metrics reset successfully"}
     except Exception as e:
-        logger.error(f"Error resetting metrics: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error resetting metrics: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
+
+# =====================================================
+# ENTRYPOINT
+# =====================================================
 
 if __name__ == "__main__":
     import uvicorn
-
-    # Validate configuration
     config.validate()
-
-    # Run the API server
     uvicorn.run(
         "src.api.main:api_app",
         host=config.API_HOST,
@@ -241,3 +294,6 @@ if __name__ == "__main__":
         reload=True,
         log_level=config.LOG_LEVEL.lower()
     )
+
+from mangum import Mangum
+handler = Mangum(api_app)

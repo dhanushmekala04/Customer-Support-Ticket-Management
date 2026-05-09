@@ -70,12 +70,10 @@ customer-support-ticket-mgmt-multi-agent-system/
 │   │   └── metrics.py          # Performance metrics
 │   ├── config.py               # Configuration management
 │   └── workflow.py             # LangGraph workflow orchestration
-├── data/
-│   └── faq_database.json       # Knowledge base
-├── scripts/
-│   ├── run_example.py          # Direct workflow example
-│   ├── test_api.py             # API testing script
-│   └── add_faq.py              # FAQ management utility
+├── Dockerfile
+├──.dockerignore
+├──deploy.sh
+│   
 ├── logs/                       # Application logs
 ├── tests/                      # Unit tests
 ├── .env.example                # Environment template
@@ -171,17 +169,7 @@ Or using make:
 make test-api
 ```
 
-### Option 2: Direct Workflow Execution
 
-**Run example tickets:**
-```bash
-python scripts/run_example.py
-```
-
-Or using make:
-```bash
-make run-example
-```
 
 **Use in your code:**
 ```python
@@ -298,24 +286,6 @@ TICKET_ID_PREFIX=TKT
 MAX_CONVERSATION_HISTORY=50
 ```
 
-## Managing FAQs
-
-### Add FAQ Entry (Interactive)
-```bash
-python scripts/add_faq.py
-```
-
-### Add FAQ Entry (Command Line)
-```bash
-python scripts/add_faq.py add TECHNICAL "How do I reset my password?" "Click forgot password and follow the steps..."
-```
-
-### List All FAQs
-```bash
-python scripts/add_faq.py list
-```
-
-The FAQ database is stored in `data/faq_database.json` and includes 20 pre-configured entries covering common technical, billing, and general support questions.
 
 ## Agent Details
 
@@ -431,7 +401,7 @@ make clean
 6. **Monitoring**: Integrate with monitoring services
 7. **Scaling**: Use containerization (Docker) and orchestration
 
-### Docker Deployment (Coming Soon)
+### Docker Deployment 
 ```bash
 docker build -t ticket-system .
 docker run -p 8000:8000 --env-file .env ticket-system

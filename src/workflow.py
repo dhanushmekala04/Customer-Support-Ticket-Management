@@ -1,12 +1,17 @@
 """
-LangGraph Workflow - Orchestrates the multi-agent ticket management system.
+LangGraph Workflow - Orchestrates the multi-agent
+ticket management system.
 """
 
 import logging
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import (
+    StateGraph,
+    END
+)
 
 from src.models.state import TicketState
+
 from src.agents import (
     intake_agent,
     faq_lookup_agent,
@@ -22,121 +27,297 @@ from src.agents import (
 logger = logging.getLogger(__name__)
 
 
-def route_by_category(state: TicketState) -> str:
+# =====================================================
+# FAQ ROUTER
+# =====================================================
+
+def faq_router(
+    state: TicketState
+) -> str:
     """
-    Route ticket to appropriate specialized agent based on category.
+    Route based on FAQ resolution.
 
-    Args:
-        state: Current ticket state
-
-    Returns:
-        Name of the next node to execute
+    If FAQ already solved the issue,
+    skip classifier + support agents.
     """
-    category = state.get("category", "").strip().upper()
 
-    logger.info(f"Routing ticket {state['ticket_id']} - Category: {category}")
+    faq_match = (
+        state.get("faq_match", "")
+        .strip()
+    )
+
+    if faq_match:
+
+        logger.info(
+            f"FAQ resolved ticket "
+            f"{state['ticket_id']}"
+        )
+
+        return "response_gen"
+
+    return "classifier"
+
+
+# =====================================================
+# CATEGORY ROUTER
+# =====================================================
+
+def route_by_category(
+    state: TicketState
+) -> str:
+    """
+    Route ticket to specialized agent
+    based on category.
+    """
+
+    category = (
+        state.get("category", "")
+        .strip()
+        .upper()
+    )
+
+    logger.info(
+        f"Routing ticket "
+        f"{state['ticket_id']} "
+        f"- Category: {category}"
+    )
 
     if "TECHNICAL" in category:
+
         return "technical_support"
+
     elif "BILLING" in category:
+
         return "billing_support"
-    else:
-        return "general_support"
+
+    return "general_support"
 
 
-def handle_escalation(state: TicketState) -> str:
+# =====================================================
+# ESCALATION ROUTER
+# =====================================================
+
+def handle_escalation(
+    state: TicketState
+) -> str:
     """
     Route based on escalation decision.
-
-    Args:
-        state: Current ticket state
-
-    Returns:
-        Name of the next node or END
     """
-    if state.get("needs_escalation", False):
-        logger.info(f"Ticket {state['ticket_id']} escalated to human agent")
-        return "end_escalated"
-    else:
-        logger.info(f"Ticket {state['ticket_id']} proceeding to automated response")
-        return "send_response"
+
+    if state.get(
+        "needs_escalation",
+        False
+    ):
+
+        logger.info(
+            f"Ticket {state['ticket_id']} "
+            f"escalated to human agent"
+        )
+
+        return "escalation_response"
+
+    logger.info(
+        f"Ticket {state['ticket_id']} "
+        f"proceeding to automated response"
+    )
+
+    return "response_gen"
 
 
-def create_workflow() -> StateGraph:
+# =====================================================
+# CREATE WORKFLOW
+# =====================================================
+
+def create_workflow():
     """
-    Create and configure the LangGraph workflow.
-
-    Workflow structure:
-    1. intake -> faq_lookup -> classifier
-    2. classifier -> [technical/billing/general] (conditional routing)
-    3. specialized_agent -> escalation_check
-    4. escalation_check -> [escalation_response/response_gen] (conditional routing)
-    5. escalation_response -> END (for escalated tickets)
-       response_gen -> END (for auto-resolved tickets)
-
-    Returns:
-        Compiled StateGraph application
+    Create and configure LangGraph workflow.
     """
-    logger.info("Creating workflow graph")
 
-    # Initialize the workflow
-    workflow = StateGraph(TicketState)
+    logger.info(
+        "Creating workflow graph"
+    )
 
-    # Add all agent nodes
-    workflow.add_node("intake", intake_agent)
-    workflow.add_node("faq_lookup", faq_lookup_agent)
-    workflow.add_node("classifier", classifier_agent)
-    workflow.add_node("technical_support", technical_support_agent)
-    workflow.add_node("billing_support", billing_support_agent)
-    workflow.add_node("general_support", general_support_agent)
-    workflow.add_node("escalation_check", escalation_evaluator_agent)
-    workflow.add_node("escalation_response", escalation_response_agent)
-    workflow.add_node("response_gen", response_generator_agent)
+    # ==============================================
+    # Initialize Workflow
+    # ==============================================
 
-    # Define the workflow edges
+    workflow = StateGraph(
+        TicketState
+    )
 
-    # Entry point: Start with intake
-    workflow.set_entry_point("intake")
+    # ==============================================
+    # Add Nodes
+    # ==============================================
 
-    # Linear flow: intake -> faq_lookup -> classifier
-    workflow.add_edge("intake", "faq_lookup")
-    workflow.add_edge("faq_lookup", "classifier")
+    workflow.add_node(
+        "intake",
+        intake_agent
+    )
 
-    # Conditional routing by category
-    workflow.add_conditional_edges(
+    workflow.add_node(
+        "faq_lookup",
+        faq_lookup_agent
+    )
+
+    workflow.add_node(
         "classifier",
-        route_by_category,
-        {
-            "technical_support": "technical_support",
-            "billing_support": "billing_support",
-            "general_support": "general_support"
-        }
+        classifier_agent
     )
 
-    # All specialized agents lead to escalation check
-    workflow.add_edge("technical_support", "escalation_check")
-    workflow.add_edge("billing_support", "escalation_check")
-    workflow.add_edge("general_support", "escalation_check")
+    workflow.add_node(
+        "technical_support",
+        technical_support_agent
+    )
 
-    # Conditional routing based on escalation
-    workflow.add_conditional_edges(
+    workflow.add_node(
+        "billing_support",
+        billing_support_agent
+    )
+
+    workflow.add_node(
+        "general_support",
+        general_support_agent
+    )
+
+    workflow.add_node(
         "escalation_check",
-        handle_escalation,
+        escalation_evaluator_agent
+    )
+
+    workflow.add_node(
+        "escalation_response",
+        escalation_response_agent
+    )
+
+    workflow.add_node(
+        "response_gen",
+        response_generator_agent
+    )
+
+    # ==============================================
+    # Entry Point
+    # ==============================================
+
+    workflow.set_entry_point(
+        "intake"
+    )
+
+    # ==============================================
+    # Intake → FAQ Lookup
+    # ==============================================
+
+    workflow.add_edge(
+        "intake",
+        "faq_lookup"
+    )
+
+    # ==============================================
+    # FAQ Conditional Routing
+    # ==============================================
+
+    workflow.add_conditional_edges(
+
+        "faq_lookup",
+
+        faq_router,
+
         {
-            "end_escalated": "escalation_response",
-            "send_response": "response_gen"
+            "response_gen":
+                "response_gen",
+
+            "classifier":
+                "classifier"
         }
     )
 
-    # Both response types lead to end
-    workflow.add_edge("escalation_response", END)
-    workflow.add_edge("response_gen", END)
+    # ==============================================
+    # Category Routing
+    # ==============================================
 
-    logger.info("Workflow graph created successfully")
+    workflow.add_conditional_edges(
 
-    # Compile and return the workflow
+        "classifier",
+
+        route_by_category,
+
+        {
+            "technical_support":
+                "technical_support",
+
+            "billing_support":
+                "billing_support",
+
+            "general_support":
+                "general_support"
+        }
+    )
+
+    # ==============================================
+    # Specialized Agents
+    # → Escalation Check
+    # ==============================================
+
+    workflow.add_edge(
+        "technical_support",
+        "escalation_check"
+    )
+
+    workflow.add_edge(
+        "billing_support",
+        "escalation_check"
+    )
+
+    workflow.add_edge(
+        "general_support",
+        "escalation_check"
+    )
+
+    # ==============================================
+    # Escalation Routing
+    # ==============================================
+
+    workflow.add_conditional_edges(
+
+        "escalation_check",
+
+        handle_escalation,
+
+        {
+            "escalation_response":
+                "escalation_response",
+
+            "response_gen":
+                "response_gen"
+        }
+    )
+
+    # ==============================================
+    # END STATES
+    # ==============================================
+
+    workflow.add_edge(
+        "escalation_response",
+        END
+    )
+
+    workflow.add_edge(
+        "response_gen",
+        END
+    )
+
+    logger.info(
+        "Workflow graph created successfully"
+    )
+
+    # ==============================================
+    # Compile Workflow
+    # ==============================================
+
     return workflow.compile()
 
 
-# Create the compiled app
+# =====================================================
+# COMPILED APP
+# =====================================================
+
 app = create_workflow()

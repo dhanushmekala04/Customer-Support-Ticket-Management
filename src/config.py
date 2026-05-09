@@ -13,13 +13,13 @@ class Config:
     """Configuration class for the application."""
 
     # Groq Configuration
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-    GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-70b-versatile")
-    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+    GROQ_MODEL = os.getenv("GROQ_MODEL",)
+    TEMPERATURE = float(os.getenv("TEMPERATURE"))
 
     # Application Settings
-    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-    LOG_FILE = os.getenv("LOG_FILE", "logs/ticket_system.log")
+    LOG_LEVEL = os.getenv("LOG_LEVEL")
+    LOG_FILE = os.getenv("LOG_FILE")
 
     # Escalation Thresholds
     ESCALATION_KEYWORDS = [
@@ -35,10 +35,18 @@ class Config:
         "unacceptable",
     ]
 
-    CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.7"))
+    CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD"))
 
     # FAQ Configuration
-    FAQ_DATABASE_PATH = os.getenv("FAQ_DATABASE_PATH", "data/faq_database.json")
+   # MongoDB Configuration
+    MONGO_URI = os.getenv("MONGO_URI")
+
+    MONGO_DB_NAME = os.getenv("MONGO_DB_NAME")
+
+    FAQ_COLLECTION = os.getenv("FAQ_COLLECTION")
+    TICKETS_COLLECTION = os.getenv("TICKETS_COLLECTION")
+
+   
     FAQ_SIMILARITY_THRESHOLD = float(os.getenv("FAQ_SIMILARITY_THRESHOLD", "0.75"))
 
     # API Configuration
