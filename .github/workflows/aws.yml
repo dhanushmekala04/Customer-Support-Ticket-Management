@@ -1,133 +1,50 @@
-AWSTemplateFormatVersion: "2010-09-09"
-Transform: AWS::Serverless-2016-10-31
-Description: Customer Support Ticket Management System — Lambda + API Gateway
+name: Deploy Docker Image to AWS Lambda
 
-Globals:
-  Function:
-    Timeout: 60
-    MemorySize: 512
-    Environment:
-      Variables:
-        PYTHONPATH: /var/task
-        LOG_LEVEL: INFO
+on:
+  push:
+    branches:
+      - main
 
-Parameters:
-  GroqApiKey:
-    Type: String
-    NoEcho: true
-    Description: Groq API key
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
 
-  MongoUri:
-    Type: String
-    NoEcho: true
-    Description: MongoDB Atlas connection URI
 
-  MongoDbName:
-    Type: String
-    Default: customer_tickets
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
 
-  FaqCollection:
-    Type: String
-    Default: faqs
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-  TicketsCollection:
-    Type: String
-    Default: tickets
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-  Environment:
-    Type: String
-    Default: prod
-    AllowedValues: [dev, staging, prod]
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-Resources:
+      - name: Build Docker Image
+        run: |
+          docker build -t $ECR_REPOSITORY .
 
-  # ── API Gateway ──────────────────────────────────
-  TicketApi:
-    Type: AWS::Serverless::Api
-    Properties:
-      Name: !Sub "ticket-mgmt-api-${Environment}"
-      StageName: !Ref Environment
-      Cors:
-        AllowMethods: "'*'"
-        AllowHeaders: "'*'"
-        AllowOrigin: "'*'"
+      - name: Tag Docker Image
+        run: |
+          docker tag $ECR_REPOSITORY:latest \
+          $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-  # ── Lambda Function ──────────────────────────────
-  TicketFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub "ticket-mgmt-${Environment}"
-      PackageType: Image        # ← tells SAM to use container image
-      Role: !GetAtt LambdaExecutionRole.Arn
-      Environment:
-        Variables:
-          GROQ_API_KEY: !Ref GroqApiKey
-          MONGO_URI: !Ref MongoUri
-          MONGO_DB_NAME: !Ref MongoDbName
-          FAQ_COLLECTION: !Ref FaqCollection
-          TICKETS_COLLECTION: !Ref TicketsCollection
-          TICKET_ID_PREFIX: TKT
-          FAQ_SIMILARITY_THRESHOLD: "0.75"
-          CONFIDENCE_THRESHOLD: "0.7"
-          TEMPERATURE: "0.7"
-          API_HOST: "0.0.0.0"
-          API_PORT: "8000"
-          LOG_FILE: "/tmp/ticket_system.log"
-      Events:
-        ProxyApi:
-          Type: Api
-          Properties:
-            RestApiId: !Ref TicketApi
-            Path: /{proxy+}
-            Method: ANY
-        RootApi:
-          Type: Api
-          Properties:
-            RestApiId: !Ref TicketApi
-            Path: /
-            Method: ANY
+      - name: Push Docker Image to Amazon ECR
+        run: |
+          docker push \
+          $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-    Metadata:
-      # SAM reads this to: build image → tag → push to ECR → set ImageUri
-      DockerTag: latest
-      DockerContext: .
-      Dockerfile: Dockerfile
 
-  # ── IAM Role ─────────────────────────────────────
-  LambdaExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub "ticket-mgmt-lambda-role-${Environment}"
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: LambdaLogsPolicy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
 
-Outputs:
-  ApiUrl:
-    Description: API Gateway endpoint URL
-    Value: !Sub "https://${TicketApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
-    Export:
-      Name: !Sub "TicketApiUrl-${Environment}"
-
-  LambdaFunctionArn:
-    Description: Lambda function ARN
-    Value: !GetAtt TicketFunction.Arn
-    Export:
-      Name: !Sub "TicketFunctionArn-${Environment}"
+      - name: Deployment Success
+        run: echo "Docker image deployed to AWS Lambda successfully "
