@@ -20,7 +20,7 @@ class Config:
     # Application Settings
     #LOG_LEVEL = os.getenv("LOG_LEVEL")
     #LOG_FILE = os.getenv("LOG_FILE")
-
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
     # Escalation Thresholds
     ESCALATION_KEYWORDS = [
         "lawsuit",
