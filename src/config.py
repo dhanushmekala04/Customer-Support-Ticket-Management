@@ -18,8 +18,8 @@ class Config:
     TEMPERATURE = float(os.getenv("TEMPERATURE"))
 
     # Application Settings
-    LOG_LEVEL = os.getenv("LOG_LEVEL")
-    LOG_FILE = os.getenv("LOG_FILE")
+    #LOG_LEVEL = os.getenv("LOG_LEVEL")
+    #LOG_FILE = os.getenv("LOG_FILE")
 
     # Escalation Thresholds
     ESCALATION_KEYWORDS = [
