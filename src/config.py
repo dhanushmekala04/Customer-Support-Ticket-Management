@@ -17,9 +17,7 @@ class Config:
     GROQ_MODEL = os.getenv("GROQ_MODEL",)
     TEMPERATURE = float(os.getenv("TEMPERATURE"))
 
-    # Application Settings
-    #LOG_LEVEL = os.getenv("LOG_LEVEL")
-    #LOG_FILE = os.getenv("LOG_FILE")
+  
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
     # Escalation Thresholds
     ESCALATION_KEYWORDS = [
