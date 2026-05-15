@@ -1,14 +1,5 @@
 """
-FAQ Lookup Agent - Searches MongoDB for matching FAQs
-before routing to specialized support agents.
 
-Also doubles as a CLI to manage the FAQ database
-(replaces scripts/add_faq.py):
-
-    python -m src.agents.faq_agent              # interactive add
-    python -m src.agents.faq_agent list         # list all FAQs
-    python -m src.agents.faq_agent add          # interactive add
-    python -m src.agents.faq_agent add <CATEGORY> <question> <answer>
 """
 
 import logging
@@ -200,30 +191,3 @@ def interactive_add() -> bool:
 # =====================================================
 # CLI ENTRY POINT
 # =====================================================
-
-def _cli() -> None:
-    args = sys.argv[1:]
-
-    if not args:
-        interactive_add()
-
-    elif args[0] == "list":
-        list_faqs()
-
-    elif args[0] == "add":
-        if len(args) == 4:
-            _, category, question, answer = args
-            add_faq_entry(category, question, answer)
-        else:
-            interactive_add()
-
-    else:
-        print("Usage:")
-        print("  python -m src.agents.faq_agent                           # interactive add")
-        print("  python -m src.agents.faq_agent list                      # list all FAQs")
-        print("  python -m src.agents.faq_agent add                       # interactive add")
-        print("  python -m src.agents.faq_agent add <CATEGORY> <question> <answer>")
-
-
-if __name__ == "__main__":
-    _cli()
