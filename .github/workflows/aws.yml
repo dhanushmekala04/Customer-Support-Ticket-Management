@@ -1,4 +1,4 @@
-name: Deploy Docker Image to AWS Lambda
+name: Deploy Docker Image to AWS ECS
 
 on:
   push:
@@ -22,21 +22,18 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build Docker Image
+      - name: Build, Tag & Push Docker Image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t customer_support .
-
-      - name: Tag Docker Image
-        run: |
-          docker tag customer_support:latest \
-          601063790499.dkr.ecr.ap-south-1.amazonaws.com/customer_support:latest
-
-      - name: Push Docker Image
-        run: |
-          docker push \
-          601063790499.dkr.ecr.ap-south-1.amazonaws.com/customer_support:latest
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
