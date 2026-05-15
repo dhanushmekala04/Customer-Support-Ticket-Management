@@ -1,5 +1,14 @@
 """
+FAQ Lookup Agent - Searches MongoDB for matching FAQs
+before routing to specialized support agents.
 
+Also doubles as a CLI to manage the FAQ database
+(replaces scripts/add_faq.py):
+
+    python -m src.agents.faq_agent              # interactive add
+    python -m src.agents.faq_agent list         # list all FAQs
+    python -m src.agents.faq_agent add          # interactive add
+    python -m src.agents.faq_agent add <CATEGORY> <question> <answer>
 """
 
 import logging
@@ -17,13 +26,21 @@ logger = logging.getLogger(__name__)
 # DB HELPER
 # =====================================================
 
-# Single client reused across all calls
-_client = MongoClient(config.MONGO_URI)
+# Lazy client — created on first use, not at import time
+_client = None
+
+
+def _get_client() -> MongoClient:
+    """Return a reusable MongoClient, creating it on first call."""
+    global _client
+    if _client is None:
+        _client = MongoClient(config.MONGO_URI)
+    return _client
 
 
 def _get_faq_collection():
     """Return the MongoDB FAQ collection."""
-    return _client[config.MONGO_DB_NAME][config.FAQ_COLLECTION]
+    return _get_client()[config.MONGO_DB_NAME][config.FAQ_COLLECTION]
 
 
 # =====================================================
