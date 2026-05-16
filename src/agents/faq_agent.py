@@ -14,7 +14,9 @@ Also doubles as a CLI to manage the FAQ database
 import logging
 import sys
 from difflib import SequenceMatcher
-from pymongo import MongoClient
+import certifi
+
+from motor.motor_asyncio import AsyncIOMotorClient
 
 from src.config import config
 from src.models.state import TicketState
@@ -32,15 +34,19 @@ logger = logging.getLogger(__name__)
 _client = None
 
 
-def _get_client() -> MongoClient:
+def _get_client() -> AsyncIOMotorClient:
     global _client
+
     if _client is None:
-        _client = MongoClient(
+        _client = AsyncIOMotorClient(
             config.MONGO_URI,
             tls=True,
-            tlsAllowInvalidCertificates=True,  # try first
-            
+            tlsCAFile=certifi.where(),
+            serverSelectionTimeoutMS=30000,
+            connectTimeoutMS=30000,
+            socketTimeoutMS=30000
         )
+
     return _client
 
 

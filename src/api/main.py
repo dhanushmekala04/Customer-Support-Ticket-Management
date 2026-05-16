@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Optional, List
 
 from pymongo import MongoClient
+from motor.motor_asyncio import AsyncIOMotorClient
 import certifi
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -43,16 +44,16 @@ metrics = TicketMetrics()
 # =====================================================
 
 try:
-    _mongo_client = MongoClient(
+    _mongo_client = AsyncIOMotorClient(
         config.MONGO_URI,
-        tls=True, 
-        tlsAllowInvalidCertificates=True,
-        tlsCAFile=certifi.where()
+        tls=True,
+        tlsCAFile=certifi.where(),
+        serverSelectionTimeoutMS=30000,
+        connectTimeoutMS=30000,
+        socketTimeoutMS=30000
     )
 
-    _mongo_client.admin.command("ping")
-
-    logger.info("MongoDB connected successfully")
+    logger.info("MongoDB client initialized")
 
 except Exception as e:
     logger.error(f"MongoDB connection failed: {e}")
