@@ -304,5 +304,3 @@ if __name__ == "__main__":
         log_level=config.LOG_LEVEL.lower()
     )
 
-from mangum import Mangum
-handler = Mangum(api_app)
