@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Optional, List
 
 from pymongo import MongoClient
+import certifi
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ConfigDict
@@ -41,15 +42,12 @@ metrics = TicketMetrics()
 # MONGODB
 # =====================================================
 
-import certifi
-from pymongo import MongoClient
-
 try:
     _mongo_client = MongoClient(
         config.MONGO_URI,
-        tls=True,
-        tlsCAFile=certifi.where(),
-        serverSelectionTimeoutMS=30000
+        tls=True, 
+        tlsAllowInvalidCertificates=True,
+        tlsCAFile=certifi.where()
     )
 
     _mongo_client.admin.command("ping")
