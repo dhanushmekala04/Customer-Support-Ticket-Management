@@ -10,10 +10,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 
 from pymongo import MongoClient
 from src.config import config
-
+import certifi
 
 def main():
-    client = MongoClient(config.MONGO_URI)
+    client = MongoClient(config.MONGO_URI ,tls=True,tlsAllowInvalidCertificates=True,tlsCAFile=certifi.where())
     db = client[config.MONGO_DB_NAME]
     collection = db[config.FAQ_COLLECTION]
 

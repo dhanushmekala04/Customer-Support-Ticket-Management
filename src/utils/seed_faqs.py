@@ -6,6 +6,7 @@ Seed the MongoDB FAQ collection with initial data.
 
 import sys
 import os
+import certifi
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 from pymongo import MongoClient
@@ -183,10 +184,10 @@ FAQS = [
 
 
 def seed():
-    client = MongoClient(config.MONGO_URI)
+    client = MongoClient(config.MONGO_URI, tlsCAFile=certifi.where())
     db = client[config.MONGO_DB_NAME]
     collection = db[config.FAQ_COLLECTION]
-
+ 
     existing = collection.count_documents({})
     if existing > 0:
         confirm = input(
@@ -198,18 +199,18 @@ def seed():
             return
         collection.delete_many({})
         print(f"🗑️  Cleared {existing} existing record(s).")
-
+ 
     docs = [{"id": i + 1, **faq} for i, faq in enumerate(FAQS)]
     collection.insert_many(docs)
-
+ 
     print(f"\n✅ Seeded {len(docs)} FAQs into "
           f"{config.MONGO_DB_NAME}.{config.FAQ_COLLECTION}\n")
-
+ 
     for doc in docs:
         print(f"  [{doc['id']}] {doc['category']} — {doc['question']}")
-
+ 
     print()
-
-
+ 
+ 
 if __name__ == "__main__":
     seed()

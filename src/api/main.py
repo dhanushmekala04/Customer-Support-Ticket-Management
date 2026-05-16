@@ -41,14 +41,24 @@ metrics = TicketMetrics()
 # MONGODB
 # =====================================================
 
+import certifi
+from pymongo import MongoClient
+
 try:
-    _mongo_client = MongoClient(config.MONGO_URI)
+    _mongo_client = MongoClient(
+        config.MONGO_URI,
+        tls=True,
+        tlsCAFile=certifi.where(),
+        serverSelectionTimeoutMS=30000
+    )
+
     _mongo_client.admin.command("ping")
+
     logger.info("MongoDB connected successfully")
+
 except Exception as e:
     logger.error(f"MongoDB connection failed: {e}")
     _mongo_client = None
-
 
 def get_tickets_collection():
     """Return the tickets collection."""

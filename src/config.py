@@ -15,7 +15,7 @@ class Config:
     # Groq Configuration
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     GROQ_MODEL = os.getenv("GROQ_MODEL",)
-    TEMPERATURE = float(os.getenv("TEMPERATURE"))
+    TEMPERATURE = float(os.getenv("TEMPERATURE", 0.7))
 
   
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
@@ -33,7 +33,7 @@ class Config:
         "unacceptable",
     ]
 
-    CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD"))
+    CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", 0.7))
 
     # FAQ Configuration
    # MongoDB Configuration

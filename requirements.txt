@@ -24,3 +24,4 @@ typing-extensions>=4.8.0
  
 pymongo
 mangum
+certifi==2024.7.4

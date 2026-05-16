@@ -19,6 +19,8 @@ from pymongo import MongoClient
 from src.config import config
 from src.models.state import TicketState
 
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,10 +33,14 @@ _client = None
 
 
 def _get_client() -> MongoClient:
-    """Return a reusable MongoClient, creating it on first call."""
     global _client
     if _client is None:
-        _client = MongoClient(config.MONGO_URI)
+        _client = MongoClient(
+            config.MONGO_URI,
+            tls=True,
+            tlsAllowInvalidCertificates=True,  # try first
+            
+        )
     return _client
 
 
@@ -42,10 +48,6 @@ def _get_faq_collection():
     """Return the MongoDB FAQ collection."""
     return _get_client()[config.MONGO_DB_NAME][config.FAQ_COLLECTION]
 
-
-# =====================================================
-# AGENT
-# =====================================================
 
 def _similarity(a: str, b: str) -> float:
     """Return a 0-1 similarity score between two strings."""
@@ -208,3 +210,30 @@ def interactive_add() -> bool:
 # =====================================================
 # CLI ENTRY POINT
 # =====================================================
+
+def _cli() -> None:
+    args = sys.argv[1:]
+
+    if not args:
+        interactive_add()
+
+    elif args[0] == "list":
+        list_faqs()
+
+    elif args[0] == "add":
+        if len(args) == 4:
+            _, category, question, answer = args
+            add_faq_entry(category, question, answer)
+        else:
+            interactive_add()
+
+    else:
+        print("Usage:")
+        print("  python -m src.agents.faq_agent                           # interactive add")
+        print("  python -m src.agents.faq_agent list                      # list all FAQs")
+        print("  python -m src.agents.faq_agent add                       # interactive add")
+        print("  python -m src.agents.faq_agent add <CATEGORY> <question> <answer>")
+
+
+if __name__ == "__main__":
+    _cli()
